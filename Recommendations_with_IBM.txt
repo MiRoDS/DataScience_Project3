@@ -1,0 +1,1518 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Recommendations with IBM\n",
+    "\n",
+    "In this notebook, you will be putting your recommendation skills to use on real data from the IBM Watson Studio platform. \n",
+    "\n",
+    "\n",
+    "You may either submit your notebook through the workspace here, or you may work from your local machine and submit through the next page.  Either way assure that your code passes the project [RUBRIC](https://review.udacity.com/#!/rubrics/2322/view).  **Please save regularly.**\n",
+    "\n",
+    "By following the table of contents, you will build out a number of different methods for making recommendations that can be used for different situations. \n",
+    "\n",
+    "\n",
+    "## Table of Contents\n",
+    "\n",
+    "I. [Exploratory Data Analysis](#Exploratory-Data-Analysis)<br>\n",
+    "II. [Rank Based Recommendations](#Rank)<br>\n",
+    "III. [User-User Based Collaborative Filtering](#User-User)<br>\n",
+    "IV. [Content Based Recommendations (EXTRA - NOT REQUIRED)](#Content-Recs)<br>\n",
+    "V. [Matrix Factorization](#Matrix-Fact)<br>\n",
+    "VI. [Extras & Concluding](#conclusions)\n",
+    "\n",
+    "At the end of the notebook, you will find directions for how to submit your work.  Let's get started by importing the necessary libraries and reading in the data."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 193,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>article_id</th>\n",
+       "      <th>title</th>\n",
+       "      <th>email</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>1430.0</td>\n",
+       "      <td>using pixiedust for fast, flexible, and easier...</td>\n",
+       "      <td>ef5f11f77ba020cd36e1105a00ab868bbdbf7fe7</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>1314.0</td>\n",
+       "      <td>healthcare python streaming application demo</td>\n",
+       "      <td>083cbdfa93c8444beaa4c5f5e0f5f9198e4f9e0b</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>1429.0</td>\n",
+       "      <td>use deep learning for image classification</td>\n",
+       "      <td>b96a4f2e92d8572034b1e9b28f9ac673765cd074</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>1338.0</td>\n",
+       "      <td>ml optimization using cognitive assistant</td>\n",
+       "      <td>06485706b34a5c9bf2a0ecdac41daf7e7654ceb7</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>1276.0</td>\n",
+       "      <td>deploy your python model as a restful api</td>\n",
+       "      <td>f01220c46fc92c6e6b161b1849de11faacd7ccb2</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "   article_id                                              title  \\\n",
+       "0      1430.0  using pixiedust for fast, flexible, and easier...   \n",
+       "1      1314.0       healthcare python streaming application demo   \n",
+       "2      1429.0         use deep learning for image classification   \n",
+       "3      1338.0          ml optimization using cognitive assistant   \n",
+       "4      1276.0          deploy your python model as a restful api   \n",
+       "\n",
+       "                                      email  \n",
+       "0  ef5f11f77ba020cd36e1105a00ab868bbdbf7fe7  \n",
+       "1  083cbdfa93c8444beaa4c5f5e0f5f9198e4f9e0b  \n",
+       "2  b96a4f2e92d8572034b1e9b28f9ac673765cd074  \n",
+       "3  06485706b34a5c9bf2a0ecdac41daf7e7654ceb7  \n",
+       "4  f01220c46fc92c6e6b161b1849de11faacd7ccb2  "
+      ]
+     },
+     "execution_count": 193,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "import pandas as pd\n",
+    "import numpy as np\n",
+    "import matplotlib.pyplot as plt\n",
+    "import project_tests as t\n",
+    "import pickle\n",
+    "\n",
+    "%matplotlib inline\n",
+    "\n",
+    "df = pd.read_csv('data/user-item-interactions.csv')\n",
+    "df_content = pd.read_csv('data/articles_community.csv')\n",
+    "del df['Unnamed: 0']\n",
+    "del df_content['Unnamed: 0']\n",
+    "\n",
+    "# Show df to get an idea of the data\n",
+    "df.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 194,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>doc_body</th>\n",
+       "      <th>doc_description</th>\n",
+       "      <th>doc_full_name</th>\n",
+       "      <th>doc_status</th>\n",
+       "      <th>article_id</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>Skip navigation Sign in SearchLoading...\\r\\n\\r...</td>\n",
+       "      <td>Detect bad readings in real time using Python ...</td>\n",
+       "      <td>Detect Malfunctioning IoT Sensors with Streami...</td>\n",
+       "      <td>Live</td>\n",
+       "      <td>0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>No Free Hunch Navigation * kaggle.com\\r\\n\\r\\n ...</td>\n",
+       "      <td>See the forest, see the trees. Here lies the c...</td>\n",
+       "      <td>Communicating data science: A guide to present...</td>\n",
+       "      <td>Live</td>\n",
+       "      <td>1</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>☰ * Login\\r\\n * Sign Up\\r\\n\\r\\n * Learning Pat...</td>\n",
+       "      <td>Here’s this week’s news in Data Science and Bi...</td>\n",
+       "      <td>This Week in Data Science (April 18, 2017)</td>\n",
+       "      <td>Live</td>\n",
+       "      <td>2</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>DATALAYER: HIGH THROUGHPUT, LOW LATENCY AT SCA...</td>\n",
+       "      <td>Learn how distributed DBs solve the problem of...</td>\n",
+       "      <td>DataLayer Conference: Boost the performance of...</td>\n",
+       "      <td>Live</td>\n",
+       "      <td>3</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>Skip navigation Sign in SearchLoading...\\r\\n\\r...</td>\n",
+       "      <td>This video demonstrates the power of IBM DataS...</td>\n",
+       "      <td>Analyze NY Restaurant data using Spark in DSX</td>\n",
+       "      <td>Live</td>\n",
+       "      <td>4</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "                                            doc_body  \\\n",
+       "0  Skip navigation Sign in SearchLoading...\\r\\n\\r...   \n",
+       "1  No Free Hunch Navigation * kaggle.com\\r\\n\\r\\n ...   \n",
+       "2  ☰ * Login\\r\\n * Sign Up\\r\\n\\r\\n * Learning Pat...   \n",
+       "3  DATALAYER: HIGH THROUGHPUT, LOW LATENCY AT SCA...   \n",
+       "4  Skip navigation Sign in SearchLoading...\\r\\n\\r...   \n",
+       "\n",
+       "                                     doc_description  \\\n",
+       "0  Detect bad readings in real time using Python ...   \n",
+       "1  See the forest, see the trees. Here lies the c...   \n",
+       "2  Here’s this week’s news in Data Science and Bi...   \n",
+       "3  Learn how distributed DBs solve the problem of...   \n",
+       "4  This video demonstrates the power of IBM DataS...   \n",
+       "\n",
+       "                                       doc_full_name doc_status  article_id  \n",
+       "0  Detect Malfunctioning IoT Sensors with Streami...       Live           0  \n",
+       "1  Communicating data science: A guide to present...       Live           1  \n",
+       "2         This Week in Data Science (April 18, 2017)       Live           2  \n",
+       "3  DataLayer Conference: Boost the performance of...       Live           3  \n",
+       "4      Analyze NY Restaurant data using Spark in DSX       Live           4  "
+      ]
+     },
+     "execution_count": 194,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "# Show df_content to get an idea of the data\n",
+    "df_content.head()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### <a class=\"anchor\" id=\"Exploratory-Data-Analysis\">Part I : Exploratory Data Analysis</a>\n",
+    "\n",
+    "Use the dictionary and cells below to provide some insight into the descriptive statistics of the data.\n",
+    "\n",
+    "`1.` What is the distribution of how many articles a user interacts with in the dataset?  Provide a visual and descriptive statistics to assist with giving a look at the number of times each user interacts with an article.  "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 195,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Create a new data frame with email as index and a column containing the article interactions\n",
+    "df_users=pd.DataFrame(df['email'].value_counts())\n",
+    "df_users.rename(columns={'email':'articleInteractions'}, inplace=True)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 196,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "Text(0, 0.5, 'Frequency')"
+      ]
+     },
+     "execution_count": 196,
+     "metadata": {},
+     "output_type": "execute_result"
+    },
+    {
+     "data": {
+      "image/png": "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\n",
+      "text/plain": [
+       "<Figure size 432x288 with 1 Axes>"
+      ]
+     },
+     "metadata": {
+      "needs_background": "light"
+     },
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "# Create a histogram of the number of article interactions\n",
+    "df_users['articleInteractions'].hist(bins=100, range=(0, 50))\n",
+    "plt.title(\"Distribution of how many articles a user interacts with\")\n",
+    "plt.xlabel('Number of articles')\n",
+    "plt.ylabel('Frequency')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 197,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "3.0"
+      ]
+     },
+     "execution_count": 197,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "# Calculate the median of articleInteractions\n",
+    "df_users['articleInteractions'].median()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 198,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "364"
+      ]
+     },
+     "execution_count": 198,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "# Calculate the max value of articleInteractions\n",
+    "df_users['articleInteractions'].max()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 200,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Fill in the median and maximum number of user_article interactios below\n",
+    "\n",
+    "median_val = 3 # 50% of individuals interact with 3 articles or fewer.\n",
+    "max_views_by_user = 364 # The maximum number of user-article interactions by any 1 user is 364."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "`2.` Explore and remove duplicate articles from the **df_content** dataframe.  "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 201,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "221     2\n",
+       "232     2\n",
+       "577     2\n",
+       "398     2\n",
+       "50      2\n",
+       "356     1\n",
+       "355     1\n",
+       "354     1\n",
+       "353     1\n",
+       "345     1\n",
+       "352     1\n",
+       "351     1\n",
+       "350     1\n",
+       "349     1\n",
+       "348     1\n",
+       "357     1\n",
+       "347     1\n",
+       "346     1\n",
+       "1050    1\n",
+       "344     1\n",
+       "359     1\n",
+       "343     1\n",
+       "342     1\n",
+       "341     1\n",
+       "340     1\n",
+       "339     1\n",
+       "338     1\n",
+       "337     1\n",
+       "336     1\n",
+       "335     1\n",
+       "       ..\n",
+       "706     1\n",
+       "719     1\n",
+       "718     1\n",
+       "717     1\n",
+       "716     1\n",
+       "715     1\n",
+       "714     1\n",
+       "713     1\n",
+       "712     1\n",
+       "711     1\n",
+       "710     1\n",
+       "709     1\n",
+       "708     1\n",
+       "707     1\n",
+       "705     1\n",
+       "691     1\n",
+       "704     1\n",
+       "703     1\n",
+       "702     1\n",
+       "701     1\n",
+       "700     1\n",
+       "699     1\n",
+       "698     1\n",
+       "697     1\n",
+       "696     1\n",
+       "695     1\n",
+       "694     1\n",
+       "693     1\n",
+       "692     1\n",
+       "0       1\n",
+       "Name: article_id, Length: 1051, dtype: int64"
+      ]
+     },
+     "execution_count": 201,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "# Find and explore duplicate articles\n",
+    "df_content['article_id'].value_counts() # This shows 5 articles appearing twice"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 202,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Remove any rows that have the same article_id - only keep the first\n",
+    "df_content=df_content.drop_duplicates('article_id',keep='first')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 203,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "1050    1\n",
+       "360     1\n",
+       "358     1\n",
+       "357     1\n",
+       "356     1\n",
+       "355     1\n",
+       "354     1\n",
+       "353     1\n",
+       "352     1\n",
+       "351     1\n",
+       "350     1\n",
+       "349     1\n",
+       "348     1\n",
+       "347     1\n",
+       "346     1\n",
+       "345     1\n",
+       "344     1\n",
+       "343     1\n",
+       "342     1\n",
+       "341     1\n",
+       "340     1\n",
+       "339     1\n",
+       "338     1\n",
+       "337     1\n",
+       "336     1\n",
+       "335     1\n",
+       "334     1\n",
+       "333     1\n",
+       "332     1\n",
+       "331     1\n",
+       "       ..\n",
+       "706     1\n",
+       "719     1\n",
+       "718     1\n",
+       "717     1\n",
+       "716     1\n",
+       "715     1\n",
+       "714     1\n",
+       "713     1\n",
+       "712     1\n",
+       "711     1\n",
+       "710     1\n",
+       "709     1\n",
+       "708     1\n",
+       "707     1\n",
+       "705     1\n",
+       "691     1\n",
+       "704     1\n",
+       "703     1\n",
+       "702     1\n",
+       "701     1\n",
+       "700     1\n",
+       "699     1\n",
+       "698     1\n",
+       "697     1\n",
+       "696     1\n",
+       "695     1\n",
+       "694     1\n",
+       "693     1\n",
+       "692     1\n",
+       "0       1\n",
+       "Name: article_id, Length: 1051, dtype: int64"
+      ]
+     },
+     "execution_count": 203,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "# Find and explore duplicate articles\n",
+    "df_content['article_id'].value_counts() # This shows 5 articles appearing twice"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "`3.` Use the cells below to find:\n",
+    "\n",
+    "**a.** The number of unique articles that have an interaction with a user.  \n",
+    "**b.** The number of unique articles in the dataset (whether they have any interactions or not).<br>\n",
+    "**c.** The number of unique users in the dataset. (excluding null values) <br>\n",
+    "**d.** The number of user-article interactions in the dataset."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "unique_articles = # The number of unique articles that have at least one interaction\n",
+    "total_articles = # The number of unique articles on the IBM platform\n",
+    "unique_users = # The number of unique users\n",
+    "user_article_interactions = # The number of user-article interactions"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "`4.` Use the cells below to find the most viewed **article_id**, as well as how often it was viewed.  After talking to the company leaders, the `email_mapper` function was deemed a reasonable way to map users to ids.  There were a small number of null values, and it was found that all of these null values likely belonged to a single user (which is how they are stored using the function below)."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": []
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "most_viewed_article_id = # The most viewed article in the dataset as a string with one value following the decimal \n",
+    "max_views = # The most viewed article in the dataset was viewed how many times?"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "## No need to change the code here - this will be helpful for later parts of the notebook\n",
+    "# Run this cell to map the user email to a user_id column and remove the email column\n",
+    "\n",
+    "def email_mapper():\n",
+    "    coded_dict = dict()\n",
+    "    cter = 1\n",
+    "    email_encoded = []\n",
+    "    \n",
+    "    for val in df['email']:\n",
+    "        if val not in coded_dict:\n",
+    "            coded_dict[val] = cter\n",
+    "            cter+=1\n",
+    "        \n",
+    "        email_encoded.append(coded_dict[val])\n",
+    "    return email_encoded\n",
+    "\n",
+    "email_encoded = email_mapper()\n",
+    "del df['email']\n",
+    "df['user_id'] = email_encoded\n",
+    "\n",
+    "# show header\n",
+    "df.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "## If you stored all your results in the variable names above, \n",
+    "## you shouldn't need to change anything in this cell\n",
+    "\n",
+    "sol_1_dict = {\n",
+    "    '`50% of individuals have _____ or fewer interactions.`': median_val,\n",
+    "    '`The total number of user-article interactions in the dataset is ______.`': user_article_interactions,\n",
+    "    '`The maximum number of user-article interactions by any 1 user is ______.`': max_views_by_user,\n",
+    "    '`The most viewed article in the dataset was viewed _____ times.`': max_views,\n",
+    "    '`The article_id of the most viewed article is ______.`': most_viewed_article_id,\n",
+    "    '`The number of unique articles that have at least 1 rating ______.`': unique_articles,\n",
+    "    '`The number of unique users in the dataset is ______`': unique_users,\n",
+    "    '`The number of unique articles on the IBM platform`': total_articles\n",
+    "}\n",
+    "\n",
+    "# Test your dictionary against the solution\n",
+    "t.sol_1_test(sol_1_dict)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### <a class=\"anchor\" id=\"Rank\">Part II: Rank-Based Recommendations</a>\n",
+    "\n",
+    "Unlike in the earlier lessons, we don't actually have ratings for whether a user liked an article or not.  We only know that a user has interacted with an article.  In these cases, the popularity of an article can really only be based on how often an article was interacted with.\n",
+    "\n",
+    "`1.` Fill in the function below to return the **n** top articles ordered with most interactions as the top. Test your function using the tests below."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "def get_top_articles(n, df=df):\n",
+    "    '''\n",
+    "    INPUT:\n",
+    "    n - (int) the number of top articles to return\n",
+    "    df - (pandas dataframe) df as defined at the top of the notebook \n",
+    "    \n",
+    "    OUTPUT:\n",
+    "    top_articles - (list) A list of the top 'n' article titles \n",
+    "    \n",
+    "    '''\n",
+    "    # Your code here\n",
+    "    \n",
+    "    return top_articles # Return the top article titles from df (not df_content)\n",
+    "\n",
+    "def get_top_article_ids(n, df=df):\n",
+    "    '''\n",
+    "    INPUT:\n",
+    "    n - (int) the number of top articles to return\n",
+    "    df - (pandas dataframe) df as defined at the top of the notebook \n",
+    "    \n",
+    "    OUTPUT:\n",
+    "    top_articles - (list) A list of the top 'n' article titles \n",
+    "    \n",
+    "    '''\n",
+    "    # Your code here\n",
+    " \n",
+    "    return top_articles # Return the top article ids"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "print(get_top_articles(10))\n",
+    "print(get_top_article_ids(10))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "# Test your function by returning the top 5, 10, and 20 articles\n",
+    "top_5 = get_top_articles(5)\n",
+    "top_10 = get_top_articles(10)\n",
+    "top_20 = get_top_articles(20)\n",
+    "\n",
+    "# Test each of your three lists from above\n",
+    "t.sol_2_test(get_top_articles)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### <a class=\"anchor\" id=\"User-User\">Part III: User-User Based Collaborative Filtering</a>\n",
+    "\n",
+    "\n",
+    "`1.` Use the function below to reformat the **df** dataframe to be shaped with users as the rows and articles as the columns.  \n",
+    "\n",
+    "* Each **user** should only appear in each **row** once.\n",
+    "\n",
+    "\n",
+    "* Each **article** should only show up in one **column**.  \n",
+    "\n",
+    "\n",
+    "* **If a user has interacted with an article, then place a 1 where the user-row meets for that article-column**.  It does not matter how many times a user has interacted with the article, all entries where a user has interacted with an article should be a 1.  \n",
+    "\n",
+    "\n",
+    "* **If a user has not interacted with an item, then place a zero where the user-row meets for that article-column**. \n",
+    "\n",
+    "Use the tests to make sure the basic structure of your matrix matches what is expected by the solution."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "# create the user-article matrix with 1's and 0's\n",
+    "\n",
+    "def create_user_item_matrix(df):\n",
+    "    '''\n",
+    "    INPUT:\n",
+    "    df - pandas dataframe with article_id, title, user_id columns\n",
+    "    \n",
+    "    OUTPUT:\n",
+    "    user_item - user item matrix \n",
+    "    \n",
+    "    Description:\n",
+    "    Return a matrix with user ids as rows and article ids on the columns with 1 values where a user interacted with \n",
+    "    an article and a 0 otherwise\n",
+    "    '''\n",
+    "    # Fill in the function here\n",
+    "    \n",
+    "    return user_item # return the user_item matrix \n",
+    "\n",
+    "user_item = create_user_item_matrix(df)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "## Tests: You should just need to run this cell.  Don't change the code.\n",
+    "assert user_item.shape[0] == 5149, \"Oops!  The number of users in the user-article matrix doesn't look right.\"\n",
+    "assert user_item.shape[1] == 714, \"Oops!  The number of articles in the user-article matrix doesn't look right.\"\n",
+    "assert user_item.sum(axis=1)[1] == 36, \"Oops!  The number of articles seen by user 1 doesn't look right.\"\n",
+    "print(\"You have passed our quick tests!  Please proceed!\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "`2.` Complete the function below which should take a user_id and provide an ordered list of the most similar users to that user (from most similar to least similar).  The returned result should not contain the provided user_id, as we know that each user is similar to him/herself. Because the results for each user here are binary, it (perhaps) makes sense to compute similarity as the dot product of two users. \n",
+    "\n",
+    "Use the tests to test your function."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "def find_similar_users(user_id, user_item=user_item):\n",
+    "    '''\n",
+    "    INPUT:\n",
+    "    user_id - (int) a user_id\n",
+    "    user_item - (pandas dataframe) matrix of users by articles: \n",
+    "                1's when a user has interacted with an article, 0 otherwise\n",
+    "    \n",
+    "    OUTPUT:\n",
+    "    similar_users - (list) an ordered list where the closest users (largest dot product users)\n",
+    "                    are listed first\n",
+    "    \n",
+    "    Description:\n",
+    "    Computes the similarity of every pair of users based on the dot product\n",
+    "    Returns an ordered\n",
+    "    \n",
+    "    '''\n",
+    "    # compute similarity of each user to the provided user\n",
+    "\n",
+    "    # sort by similarity\n",
+    "\n",
+    "    # create list of just the ids\n",
+    "   \n",
+    "    # remove the own user's id\n",
+    "       \n",
+    "    return most_similar_users # return a list of the users in order from most to least similar\n",
+    "        "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "# Do a spot check of your function\n",
+    "print(\"The 10 most similar users to user 1 are: {}\".format(find_similar_users(1)[:10]))\n",
+    "print(\"The 5 most similar users to user 3933 are: {}\".format(find_similar_users(3933)[:5]))\n",
+    "print(\"The 3 most similar users to user 46 are: {}\".format(find_similar_users(46)[:3]))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "`3.` Now that you have a function that provides the most similar users to each user, you will want to use these users to find articles you can recommend.  Complete the functions below to return the articles you would recommend to each user. "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "def get_article_names(article_ids, df=df):\n",
+    "    '''\n",
+    "    INPUT:\n",
+    "    article_ids - (list) a list of article ids\n",
+    "    df - (pandas dataframe) df as defined at the top of the notebook\n",
+    "    \n",
+    "    OUTPUT:\n",
+    "    article_names - (list) a list of article names associated with the list of article ids \n",
+    "                    (this is identified by the title column)\n",
+    "    '''\n",
+    "    # Your code here\n",
+    "    \n",
+    "    return article_names # Return the article names associated with list of article ids\n",
+    "\n",
+    "\n",
+    "def get_user_articles(user_id, user_item=user_item):\n",
+    "    '''\n",
+    "    INPUT:\n",
+    "    user_id - (int) a user id\n",
+    "    user_item - (pandas dataframe) matrix of users by articles: \n",
+    "                1's when a user has interacted with an article, 0 otherwise\n",
+    "    \n",
+    "    OUTPUT:\n",
+    "    article_ids - (list) a list of the article ids seen by the user\n",
+    "    article_names - (list) a list of article names associated with the list of article ids \n",
+    "                    (this is identified by the doc_full_name column in df_content)\n",
+    "    \n",
+    "    Description:\n",
+    "    Provides a list of the article_ids and article titles that have been seen by a user\n",
+    "    '''\n",
+    "    # Your code here\n",
+    "    \n",
+    "    return article_ids, article_names # return the ids and names\n",
+    "\n",
+    "\n",
+    "def user_user_recs(user_id, m=10):\n",
+    "    '''\n",
+    "    INPUT:\n",
+    "    user_id - (int) a user id\n",
+    "    m - (int) the number of recommendations you want for the user\n",
+    "    \n",
+    "    OUTPUT:\n",
+    "    recs - (list) a list of recommendations for the user\n",
+    "    \n",
+    "    Description:\n",
+    "    Loops through the users based on closeness to the input user_id\n",
+    "    For each user - finds articles the user hasn't seen before and provides them as recs\n",
+    "    Does this until m recommendations are found\n",
+    "    \n",
+    "    Notes:\n",
+    "    Users who are the same closeness are chosen arbitrarily as the 'next' user\n",
+    "    \n",
+    "    For the user where the number of recommended articles starts below m \n",
+    "    and ends exceeding m, the last items are chosen arbitrarily\n",
+    "    \n",
+    "    '''\n",
+    "    # Your code here\n",
+    "    \n",
+    "    return recs # return your recommendations for this user_id    "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "# Check Results\n",
+    "get_article_names(user_user_recs(1, 10)) # Return 10 recommendations for user 1"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "# Test your functions here - No need to change this code - just run this cell\n",
+    "assert set(get_article_names(['1024.0', '1176.0', '1305.0', '1314.0', '1422.0', '1427.0'])) == set(['using deep learning to reconstruct high-resolution audio', 'build a python app on the streaming analytics service', 'gosales transactions for naive bayes model', 'healthcare python streaming application demo', 'use r dataframes & ibm watson natural language understanding', 'use xgboost, scikit-learn & ibm watson machine learning apis']), \"Oops! Your the get_article_names function doesn't work quite how we expect.\"\n",
+    "assert set(get_article_names(['1320.0', '232.0', '844.0'])) == set(['housing (2015): united states demographic measures','self-service data preparation with ibm data refinery','use the cloudant-spark connector in python notebook']), \"Oops! Your the get_article_names function doesn't work quite how we expect.\"\n",
+    "assert set(get_user_articles(20)[0]) == set(['1320.0', '232.0', '844.0'])\n",
+    "assert set(get_user_articles(20)[1]) == set(['housing (2015): united states demographic measures', 'self-service data preparation with ibm data refinery','use the cloudant-spark connector in python notebook'])\n",
+    "assert set(get_user_articles(2)[0]) == set(['1024.0', '1176.0', '1305.0', '1314.0', '1422.0', '1427.0'])\n",
+    "assert set(get_user_articles(2)[1]) == set(['using deep learning to reconstruct high-resolution audio', 'build a python app on the streaming analytics service', 'gosales transactions for naive bayes model', 'healthcare python streaming application demo', 'use r dataframes & ibm watson natural language understanding', 'use xgboost, scikit-learn & ibm watson machine learning apis'])\n",
+    "print(\"If this is all you see, you passed all of our tests!  Nice job!\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "`4.` Now we are going to improve the consistency of the **user_user_recs** function from above.  \n",
+    "\n",
+    "* Instead of arbitrarily choosing when we obtain users who are all the same closeness to a given user - choose the users that have the most total article interactions before choosing those with fewer article interactions.\n",
+    "\n",
+    "\n",
+    "* Instead of arbitrarily choosing articles from the user where the number of recommended articles starts below m and ends exceeding m, choose articles with the articles with the most total interactions before choosing those with fewer total interactions. This ranking should be  what would be obtained from the **top_articles** function you wrote earlier."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "def get_top_sorted_users(user_id, df=df, user_item=user_item):\n",
+    "    '''\n",
+    "    INPUT:\n",
+    "    user_id - (int)\n",
+    "    df - (pandas dataframe) df as defined at the top of the notebook \n",
+    "    user_item - (pandas dataframe) matrix of users by articles: \n",
+    "            1's when a user has interacted with an article, 0 otherwise\n",
+    "    \n",
+    "            \n",
+    "    OUTPUT:\n",
+    "    neighbors_df - (pandas dataframe) a dataframe with:\n",
+    "                    neighbor_id - is a neighbor user_id\n",
+    "                    similarity - measure of the similarity of each user to the provided user_id\n",
+    "                    num_interactions - the number of articles viewed by the user - if a u\n",
+    "                    \n",
+    "    Other Details - sort the neighbors_df by the similarity and then by number of interactions where \n",
+    "                    highest of each is higher in the dataframe\n",
+    "     \n",
+    "    '''\n",
+    "    # Your code here\n",
+    "    \n",
+    "    return neighbors_df # Return the dataframe specified in the doc_string\n",
+    "\n",
+    "\n",
+    "def user_user_recs_part2(user_id, m=10):\n",
+    "    '''\n",
+    "    INPUT:\n",
+    "    user_id - (int) a user id\n",
+    "    m - (int) the number of recommendations you want for the user\n",
+    "    \n",
+    "    OUTPUT:\n",
+    "    recs - (list) a list of recommendations for the user by article id\n",
+    "    rec_names - (list) a list of recommendations for the user by article title\n",
+    "    \n",
+    "    Description:\n",
+    "    Loops through the users based on closeness to the input user_id\n",
+    "    For each user - finds articles the user hasn't seen before and provides them as recs\n",
+    "    Does this until m recommendations are found\n",
+    "    \n",
+    "    Notes:\n",
+    "    * Choose the users that have the most total article interactions \n",
+    "    before choosing those with fewer article interactions.\n",
+    "\n",
+    "    * Choose articles with the articles with the most total interactions \n",
+    "    before choosing those with fewer total interactions. \n",
+    "   \n",
+    "    '''\n",
+    "    # Your code here\n",
+    "    \n",
+    "    return recs, rec_names"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "# Quick spot check - don't change this code - just use it to test your functions\n",
+    "rec_ids, rec_names = user_user_recs_part2(20, 10)\n",
+    "print(\"The top 10 recommendations for user 20 are the following article ids:\")\n",
+    "print(rec_ids)\n",
+    "print()\n",
+    "print(\"The top 10 recommendations for user 20 are the following article names:\")\n",
+    "print(rec_names)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "`5.` Use your functions from above to correctly fill in the solutions to the dictionary below.  Then test your dictionary against the solution.  Provide the code you need to answer each following the comments below."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "### Tests with a dictionary of results\n",
+    "\n",
+    "user1_most_sim = # Find the user that is most similar to user 1 \n",
+    "user131_10th_sim = # Find the 10th most similar user to user 131"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "## Dictionary Test Here\n",
+    "sol_5_dict = {\n",
+    "    'The user that is most similar to user 1.': user1_most_sim, \n",
+    "    'The user that is the 10th most similar to user 131': user131_10th_sim,\n",
+    "}\n",
+    "\n",
+    "t.sol_5_test(sol_5_dict)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "`6.` If we were given a new user, which of the above functions would you be able to use to make recommendations?  Explain.  Can you think of a better way we might make recommendations?  Use the cell below to explain a better method for new users."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "**Provide your response here.**"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "`7.` Using your existing functions, provide the top 10 recommended articles you would provide for the a new user below.  You can test your function against our thoughts to make sure we are all on the same page with how we might make a recommendation."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "new_user = '0.0'\n",
+    "\n",
+    "# What would your recommendations be for this new user '0.0'?  As a new user, they have no observed articles.\n",
+    "# Provide a list of the top 10 article ids you would give to \n",
+    "new_user_recs = # Your recommendations here\n",
+    "\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "assert set(new_user_recs) == set(['1314.0','1429.0','1293.0','1427.0','1162.0','1364.0','1304.0','1170.0','1431.0','1330.0']), \"Oops!  It makes sense that in this case we would want to recommend the most popular articles, because we don't know anything about these users.\"\n",
+    "\n",
+    "print(\"That's right!  Nice job!\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### <a class=\"anchor\" id=\"Content-Recs\">Part IV: Content Based Recommendations (EXTRA - NOT REQUIRED)</a>\n",
+    "\n",
+    "Another method we might use to make recommendations is to perform a ranking of the highest ranked articles associated with some term.  You might consider content to be the **doc_body**, **doc_description**, or **doc_full_name**.  There isn't one way to create a content based recommendation, especially considering that each of these columns hold content related information.  \n",
+    "\n",
+    "`1.` Use the function body below to create a content based recommender.  Since there isn't one right answer for this recommendation tactic, no test functions are provided.  Feel free to change the function inputs if you decide you want to try a method that requires more input values.  The input values are currently set with one idea in mind that you may use to make content based recommendations.  One additional idea is that you might want to choose the most popular recommendations that meet your 'content criteria', but again, there is a lot of flexibility in how you might make these recommendations.\n",
+    "\n",
+    "### This part is NOT REQUIRED to pass this project.  However, you may choose to take this on as an extra way to show off your skills."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "def make_content_recs():\n",
+    "    '''\n",
+    "    INPUT:\n",
+    "    \n",
+    "    OUTPUT:\n",
+    "    \n",
+    "    '''"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "`2.` Now that you have put together your content-based recommendation system, use the cell below to write a summary explaining how your content based recommender works.  Do you see any possible improvements that could be made to your function?  Is there anything novel about your content based recommender?\n",
+    "\n",
+    "### This part is NOT REQUIRED to pass this project.  However, you may choose to take this on as an extra way to show off your skills."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "**Write an explanation of your content based recommendation system here.**"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "`3.` Use your content-recommendation system to make recommendations for the below scenarios based on the comments.  Again no tests are provided here, because there isn't one right answer that could be used to find these content based recommendations.\n",
+    "\n",
+    "### This part is NOT REQUIRED to pass this project.  However, you may choose to take this on as an extra way to show off your skills."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "# make recommendations for a brand new user\n",
+    "\n",
+    "\n",
+    "# make a recommendations for a user who only has interacted with article id '1427.0'\n",
+    "\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### <a class=\"anchor\" id=\"Matrix-Fact\">Part V: Matrix Factorization</a>\n",
+    "\n",
+    "In this part of the notebook, you will build use matrix factorization to make article recommendations to the users on the IBM Watson Studio platform.\n",
+    "\n",
+    "`1.` You should have already created a **user_item** matrix above in **question 1** of **Part III** above.  This first question here will just require that you run the cells to get things set up for the rest of **Part V** of the notebook. "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "# Load the matrix here\n",
+    "user_item_matrix = pd.read_pickle('user_item_matrix.p')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "# quick look at the matrix\n",
+    "user_item_matrix.head()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "`2.` In this situation, you can use Singular Value Decomposition from [numpy](https://docs.scipy.org/doc/numpy-1.14.0/reference/generated/numpy.linalg.svd.html) on the user-item matrix.  Use the cell to perform SVD, and explain why this is different than in the lesson."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "# Perform SVD on the User-Item Matrix Here\n",
+    "\n",
+    "u, s, vt = # use the built in to get the three matrices"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "**Provide your response here.**"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "`3.` Now for the tricky part, how do we choose the number of latent features to use?  Running the below cell, you can see that as the number of latent features increases, we obtain a lower error rate on making predictions for the 1 and 0 values in the user-item matrix.  Run the cell below to get an idea of how the accuracy improves as we increase the number of latent features."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "num_latent_feats = np.arange(10,700+10,20)\n",
+    "sum_errs = []\n",
+    "\n",
+    "for k in num_latent_feats:\n",
+    "    # restructure with k latent features\n",
+    "    s_new, u_new, vt_new = np.diag(s[:k]), u[:, :k], vt[:k, :]\n",
+    "    \n",
+    "    # take dot product\n",
+    "    user_item_est = np.around(np.dot(np.dot(u_new, s_new), vt_new))\n",
+    "    \n",
+    "    # compute error for each prediction to actual value\n",
+    "    diffs = np.subtract(user_item_matrix, user_item_est)\n",
+    "    \n",
+    "    # total errors and keep track of them\n",
+    "    err = np.sum(np.sum(np.abs(diffs)))\n",
+    "    sum_errs.append(err)\n",
+    "    \n",
+    "    \n",
+    "plt.plot(num_latent_feats, 1 - np.array(sum_errs)/df.shape[0]);\n",
+    "plt.xlabel('Number of Latent Features');\n",
+    "plt.ylabel('Accuracy');\n",
+    "plt.title('Accuracy vs. Number of Latent Features');"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "`4.` From the above, we can't really be sure how many features to use, because simply having a better way to predict the 1's and 0's of the matrix doesn't exactly give us an indication of if we are able to make good recommendations.  Instead, we might split our dataset into a training and test set of data, as shown in the cell below.  \n",
+    "\n",
+    "Use the code from question 3 to understand the impact on accuracy of the training and test sets of data with different numbers of latent features. Using the split below: \n",
+    "\n",
+    "* How many users can we make predictions for in the test set?  \n",
+    "* How many users are we not able to make predictions for because of the cold start problem?\n",
+    "* How many articles can we make predictions for in the test set?  \n",
+    "* How many articles are we not able to make predictions for because of the cold start problem?"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "df_train = df.head(40000)\n",
+    "df_test = df.tail(5993)\n",
+    "\n",
+    "def create_test_and_train_user_item(df_train, df_test):\n",
+    "    '''\n",
+    "    INPUT:\n",
+    "    df_train - training dataframe\n",
+    "    df_test - test dataframe\n",
+    "    \n",
+    "    OUTPUT:\n",
+    "    user_item_train - a user-item matrix of the training dataframe \n",
+    "                      (unique users for each row and unique articles for each column)\n",
+    "    user_item_test - a user-item matrix of the testing dataframe \n",
+    "                    (unique users for each row and unique articles for each column)\n",
+    "    test_idx - all of the test user ids\n",
+    "    test_arts - all of the test article ids\n",
+    "    \n",
+    "    '''\n",
+    "    # Your code here\n",
+    "    \n",
+    "    return user_item_train, user_item_test, test_idx, test_arts\n",
+    "\n",
+    "user_item_train, user_item_test, test_idx, test_arts = create_test_and_train_user_item(df_train, df_test)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "# Replace the values in the dictionary below\n",
+    "a = 662 \n",
+    "b = 574 \n",
+    "c = 20 \n",
+    "d = 0 \n",
+    "\n",
+    "\n",
+    "sol_4_dict = {\n",
+    "    'How many users can we make predictions for in the test set?': # letter here, \n",
+    "    'How many users in the test set are we not able to make predictions for because of the cold start problem?': # letter here, \n",
+    "    'How many articles can we make predictions for in the test set?': # letter here,\n",
+    "    'How many articles in the test set are we not able to make predictions for because of the cold start problem?': # letter here\n",
+    "}\n",
+    "\n",
+    "t.sol_4_test(sol_4_dict)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "`5.` Now use the **user_item_train** dataset from above to find U, S, and V transpose using SVD. Then find the subset of rows in the **user_item_test** dataset that you can predict using this matrix decomposition with different numbers of latent features to see how many features makes sense to keep based on the accuracy on the test data. This will require combining what was done in questions `2` - `4`.\n",
+    "\n",
+    "Use the cells below to explore how well SVD works towards making predictions for recommendations on the test data.  "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "# fit SVD on the user_item_train matrix\n",
+    "u_train, s_train, vt_train = # fit svd similar to above then use the cells below"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "# Use these cells to see how well you can use the training \n",
+    "# decomposition to predict on test data"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": []
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": []
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "collapsed": true
+   },
+   "source": [
+    "`6.` Use the cell below to comment on the results you found in the previous question. Given the circumstances of your results, discuss what you might do to determine if the recommendations you make with any of the above recommendation systems are an improvement to how users currently find articles? "
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "**Your response here.**"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "collapsed": true
+   },
+   "source": [
+    "<a id='conclusions'></a>\n",
+    "### Extras\n",
+    "Using your workbook, you could now save your recommendations for each user, develop a class to make new predictions and update your results, and make a flask app to deploy your results.  These tasks are beyond what is required for this project.  However, from what you learned in the lessons, you certainly capable of taking these tasks on to improve upon your work here!\n",
+    "\n",
+    "\n",
+    "## Conclusion\n",
+    "\n",
+    "> Congratulations!  You have reached the end of the Recommendations with IBM project! \n",
+    "\n",
+    "> **Tip**: Once you are satisfied with your work here, check over your report to make sure that it is satisfies all the areas of the [rubric](https://review.udacity.com/#!/rubrics/2322/view). You should also probably remove all of the \"Tips\" like this one so that the presentation is as polished as possible.\n",
+    "\n",
+    "\n",
+    "## Directions to Submit\n",
+    "\n",
+    "> Before you submit your project, you need to create a .html or .pdf version of this notebook in the workspace here. To do that, run the code cell below. If it worked correctly, you should get a return code of 0, and you should see the generated .html file in the workspace directory (click on the orange Jupyter icon in the upper left).\n",
+    "\n",
+    "> Alternatively, you can download this report as .html via the **File** > **Download as** submenu, and then manually upload it into the workspace directory by clicking on the orange Jupyter icon in the upper left, then using the Upload button.\n",
+    "\n",
+    "> Once you've done this, you can submit your project by clicking on the \"Submit Project\" button in the lower right here. This will create and submit a zip file with this .ipynb doc and the .html or .pdf version you created. Congratulations! "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "from subprocess import call\n",
+    "call(['python', '-m', 'nbconvert', 'Recommendations_with_IBM.ipynb'])"
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.7.3"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 2
+}
