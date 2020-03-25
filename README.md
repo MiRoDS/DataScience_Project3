@@ -7,7 +7,7 @@ This is the third project of the Data Science Nanodegree program. In the Jupyter
 
 2. Project Motivation: Goal was to develop concepts for the recommendation of articles.
 
-3. File Description: Just load Recommendations_with_IBM.ipynb into your Jupyter-Notebook. Furthermore, you need the data files 'data/user-item-interactions.csv' and 'data/articles_community.csv' and the project_tests.
+3. File Description: Just load Recommendations_with_IBM.ipynb into your Jupyter-Notebook. Furthermore, you need the data files 'data/user-item-interactions.csv' and 'data/articles_community.csv' and the project_tests (all from Udacity).
 
 4. How to Interact with the project: Go through the cells and execute them.
 
