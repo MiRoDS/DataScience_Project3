@@ -9,6 +9,6 @@ This is the third project of the Data Science Nanodegree program. In the Jupyter
 
 3. File Description: Just load Recommendations_with_IBM.ipynb into your Jupyter-Notebook. Furthermore, you need the data files 'data/user-item-interactions.csv' and 'data/articles_community.csv' and the project_tests.
 
-4. How to Interact with your project: Go through the cells and execute them.
+4. How to Interact with the project: Go through the cells and execute them.
 
-5. Licensing, Authors, Acknowledgements, etc.: Thanks to Udacity for the very interesting introduction into recommendation engines.
+5. Licensing, Authors, Acknowledgements, etc.: Thanks to Udacity for the interesting introduction into recommendation engines.
